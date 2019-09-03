@@ -61,6 +61,10 @@ namespace jsk_rviz_plugins
       "fps", 30.0,
       "fps", this, SLOT(updateFps()));
     fps_property_->setMin(0.1);
+    use_wall_timer_property_ = new rviz::BoolProperty(
+      "use wall timer", false,
+      "Create timer to capture frame at every callback or capture frame at every rendering",
+      this, SLOT(updateUseWallTimer()));
   }
 
   VideoCaptureDisplay::~VideoCaptureDisplay()
@@ -73,6 +77,7 @@ namespace jsk_rviz_plugins
   {
     updateFileName();
     updateFps();
+    updateUseWallTimer();
     //updateStartCapture();
     start_capture_property_->setBool(false); // always false when starting up
     context_->queueRender();
@@ -145,7 +150,23 @@ namespace jsk_rviz_plugins
   {
     fps_ = fps_property_->getFloat();
   }
-  
+
+  void VideoCaptureDisplay::updateUseWallTimer()
+  {
+    use_wall_timer_ = use_wall_timer_property_->getBool();
+    if (use_wall_timer_) {
+      timer_ = nh_.createWallTimer(
+        ros::WallDuration(1.0 / fps_), &VideoCaptureDisplay::timerCallback, this);
+    }
+  }
+
+  void VideoCaptureDisplay::timerCallback(const ros::WallTimerEvent& event)
+  {
+    if (capturing_ && use_wall_timer_) {
+      writeVideo();
+    }
+  }
+
   void VideoCaptureDisplay::startCapture()
   {
     ROS_INFO("start capturing");
@@ -163,6 +184,29 @@ namespace jsk_rviz_plugins
     frame_counter_ = 0;
   }
 
+  void VideoCaptureDisplay::writeVideo()
+  {
+    // rviz::RenderPanel* panel = context_->getViewManager()->getRenderPanel();
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    QPixmap screenshot
+      = QGuiApplication::primaryScreen()->grabWindow(context_->getViewManager()->getRenderPanel()->winId());
+#else
+    QPixmap screenshot
+      = QPixmap::grabWindow(context_->getViewManager()->getRenderPanel()->winId());
+#endif
+    QImage src = screenshot.toImage().convertToFormat(QImage::Format_RGB888);  // RGB
+
+    // convert QPixmap into cv::Mat
+    cv::Mat image(src.height(), src.width(), CV_8UC3,
+                  (uchar*)src.bits(), src.bytesPerLine());  // RGB
+    cv::cvtColor(image, image, CV_RGB2BGR);  // RGB -> BGR
+    writer_ << image;
+    ++frame_counter_;
+    if (frame_counter_ % 100 == 0) {
+      ROS_INFO("taking %d frames as video", frame_counter_);
+    }
+  }
+
   void VideoCaptureDisplay::update(float wall_dt, float ros_dt)
   {
     if (first_time_) {
@@ -171,26 +215,9 @@ namespace jsk_rviz_plugins
       first_time_ = false;
       return;
     }
-    if (capturing_) {
-      rviz::RenderPanel* panel = context_->getViewManager()->getRenderPanel();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-      QPixmap screenshot
-        = QGuiApplication::primaryScreen()->grabWindow(context_->getViewManager()->getRenderPanel()->winId());
-#else
-      QPixmap screenshot
-        = QPixmap::grabWindow(context_->getViewManager()->getRenderPanel()->winId());
-#endif
-      QImage src = screenshot.toImage().convertToFormat(QImage::Format_RGB888);  // RGB
-      cv::Mat image(src.height(), src.width(), CV_8UC3,
-                    (uchar*)src.bits(), src.bytesPerLine());  // RGB
-      cv::cvtColor(image, image, CV_RGB2BGR);  // RGB -> BGR
-      writer_ << image;
-      ++frame_counter_;
-      if (frame_counter_ % 100 == 0) {
-        ROS_INFO("taking %d frames as video", frame_counter_);
-      }
+    if (capturing_ && !use_wall_timer_) {
+      writeVideo();
     }
-    // convert QPixmap into cv::Mat
   }
 }
 

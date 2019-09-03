@@ -67,15 +67,21 @@ namespace jsk_rviz_plugins
     virtual void update(float wall_dt, float ros_dt);
     virtual void startCapture();
     virtual void stopCapture();
+    virtual void timerCallback(const ros::WallTimerEvent& event);
+    virtual void writeVideo();
     ////////////////////////////////////////////////////////
     // Variables
     ////////////////////////////////////////////////////////
     rviz::StringProperty* file_name_property_;
     rviz::BoolProperty* start_capture_property_;
     rviz::FloatProperty* fps_property_;
+    rviz::BoolProperty* use_wall_timer_property_;
+    ros::NodeHandle nh_;
     std::string file_name_;
     bool capturing_;
     double fps_;
+    bool use_wall_timer_;
+    ros::WallTimer timer_;
     int frame_counter_;
     bool first_time_;
     cv::VideoWriter writer_;
@@ -83,6 +89,7 @@ namespace jsk_rviz_plugins
     void updateFileName();
     void updateStartCapture();
     void updateFps();
+    void updateUseWallTimer();
   private:
     
   };
